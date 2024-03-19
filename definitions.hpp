@@ -1,2 +1,19 @@
+#ifndef DEFINITIONS_HEADER
+#define DEFINITIONS_HEADER
+
 #define BAUDRATE 9600
 #define DEBUG
+
+#define SERVER_PORT 3601
+#define SERVER_IP  "192.168.1.39"
+
+#define IOT_CHANNEL 2291417
+#define IOT_WRITE_KEY "ZGTZIEYBOGM3ZGWF"
+
+enum UNIT {MEASUREMENT_MM,MEASUREMENT_CM};
+
+void haltProgram(){
+  while(true) {}
+}
+
+#endif
