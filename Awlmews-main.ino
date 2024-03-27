@@ -14,6 +14,30 @@ UltrasonicSensor ultrasonic;
 WiFiClient server;
 bool demoMode = false;
 
+void printInput(char *out, int maxSize, char* text){
+  Serial.print(text);
+  getText(out,maxSize);
+}
+
+void flushInput(){
+  while(Serial.available() > 0){
+    Serial.read(); 
+  }
+}
+
+int getText(char* out, int maxSize) {
+  while(Serial.available() <= 0) {}
+  int index = 0;
+  while(Serial.available() > 0){
+    char c = Serial.read();
+    if(isAlphaNumeric(c)){
+      out[index++] = c;
+      if(index == maxSize) break;
+    }
+    delay(10);
+  }
+  return index;
+}
 
 namespace SETTINGS{
   int ultrasonicSamples = 1;
@@ -58,8 +82,8 @@ void connectToServer(){
     }
   }
 } 
-bool autoConnectWifi = true;
-bool autoConnectServer = true;
+bool autoConnectWifi = false;
+bool autoConnectServer = false;
 
 void readSerial(char *buffer){
   delay(500);
@@ -96,20 +120,16 @@ void setupWifi(){
     strcpy(wifiName, WIFI_NAME);
     strcpy(wifiPassword, WIFI_PASSWORD);
   }else{
-    Serial.print("Wifi Name: ");
-    readSerial(wifiName);
-    Serial.print("Wifi Password: ");
-    readSerial(wifiPassword);
-  }
+    printInput(wifiName,256,"Wifi Name: ");
+    printInput(wifiPassword,256,"Wifi Password: "); 
+   }
 
   if(autoConnectServer){
     serverPort = SERVER_PORT;
     strcpy(serverIp, SERVER_IP);
   }else{
-    Serial.print("Server IP: ");
-    readSerial(serverIp);
-    Serial.print("Server Port: ");
-    readSerial(serverPortStr);
+    printInput(serverIp,256,"Server IP: ");
+    printInput(serverPortStr,256, "Server Port: ");
     serverPort = atoi(serverPortStr);
   }
 
