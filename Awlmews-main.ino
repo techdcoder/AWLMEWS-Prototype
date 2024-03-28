@@ -5,6 +5,7 @@
 #include <ThingSpeak.h>
 #include "secrets.hpp"
 #include "TOF.hpp"
+#include "SerialReader.hpp"
 #include "UltrasonicSensor.hpp"
 
 TOF tof;
@@ -13,31 +14,6 @@ WiFiClient client;
 UltrasonicSensor ultrasonic;
 WiFiClient server;
 bool demoMode = false;
-
-void printInput(char *out, int maxSize, char* text){
-  Serial.print(text);
-  getText(out,maxSize);
-}
-
-void flushInput(){
-  while(Serial.available() > 0){
-    Serial.read(); 
-  }
-}
-
-int getText(char* out, int maxSize) {
-  while(Serial.available() <= 0) {}
-  int index = 0;
-  while(Serial.available() > 0){
-    char c = Serial.read();
-    if(isAlphaNumeric(c)){
-      out[index++] = c;
-      if(index == maxSize) break;
-    }
-    delay(10);
-  }
-  return index;
-}
 
 namespace SETTINGS{
   int ultrasonicSamples = 1;
@@ -120,16 +96,16 @@ void setupWifi(){
     strcpy(wifiName, WIFI_NAME);
     strcpy(wifiPassword, WIFI_PASSWORD);
   }else{
-    printInput(wifiName,256,"Wifi Name: ");
-    printInput(wifiPassword,256,"Wifi Password: "); 
+    getInputPrint(wifiName,256,"Please enter Wifi Name");
+    getInputPrint(wifiPassword,256,"Please enter Wifi Password"); 
    }
 
   if(autoConnectServer){
     serverPort = SERVER_PORT;
     strcpy(serverIp, SERVER_IP);
   }else{
-    printInput(serverIp,256,"Server IP: ");
-    printInput(serverPortStr,256, "Server Port: ");
+    getInputPrint(serverIp,256,"Please enter Server IP");
+    getInputPrint(serverPortStr,256, "Please enter Server Port ");
     serverPort = atoi(serverPortStr);
   }
 
