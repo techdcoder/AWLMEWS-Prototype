@@ -26,6 +26,22 @@ namespace SETTINGS{
   float threshold = 10.0;
 };
 
+struct Time{
+  int hour, minute, second, millisecond;
+};
+
+int offsetMillis = 0;
+int getMillis(){
+  return (millis()%1000) - offsetMillis;
+}
+
+void setTime(Time t){
+  rtc.setHour(t.hour);
+  rtc.setMinute(t.minute);
+  rtc.setSecond(t.second);
+  offsetMillis = t.millisecond - getMillis();
+}
+
 void printSettings(){
   char output[1024];
   sprintf(output,"Ultrasonic Samples: %d\n TOF Samples: %d\n TOF Signal Range Limit: %f\n TOF Timing Budget: %d\n Prototype Height: %f\n IOT Enabled: %d\n Siren Enabled: %d\n Threshold: %f",SETTINGS::ultrasonicSamples,SETTINGS::tofSamples,SETTINGS::tofSignalRangeLimit,SETTINGS::tofTimingBudget,SETTINGS::prototypeHeight,SETTINGS::iotEnabled,SETTINGS::sirenEnabled,SETTINGS::threshold);
@@ -58,8 +74,7 @@ void connectToServer(){
     }
   }
 } 
-bool autoConnectWifi = false;
-bool autoConnectServer = false;
+
 
 void readSerial(char *buffer){
   delay(500);
@@ -212,6 +227,36 @@ void testSensors(char *cmd){
   }
 }
 
+bool status = false;
+
+void updateTime(char* str){
+  str = strtok(str," ");
+  Serial.println(str);
+
+  Time t;
+
+  t.hour = atoi(strtok(NULL, " "));
+  t.minute = atoi(strtok(NULL, " "));
+  t.second = atoi(strtok(NULL, " "));
+  t.millisecond = atoi(strtok(NULL, " "));
+
+  setTime(t);
+}
+
+Time getTime(){
+    Time t;
+    t.second = rtc.getSecond();
+    t.minute = rtc.getMinute();
+
+    bool h, hpm;
+    t.hour = rtc.getHour(h,hpm);
+    if(h){
+      t.hour += hpm * 12;
+    }
+    t.millisecond = getMillis();
+    return t;
+}
+
 void demoModeRun(){
   float ultrasonicReading = ultrasonic.getReading(MEASUREMENT_CM);
   float tofReading = tof.getReading(MEASUREMENT_CM);
@@ -258,7 +303,9 @@ void processCommand(){
   }else if(buf[0] == 'd'){
     bool status = buf[2]-'0';
     Serial.println(status);
-
+  }else if(buf[0] == 'm'){
+     updateTime(buf);
+  }else{  
     demoMode = status;
   }
 }
