@@ -1,4 +1,4 @@
-#include "definitions.hpp"
+  #include "definitions.hpp"
 #include <DS3231.h>
 #include <Wire.h>
 #include "ESP8266WiFi.h"
@@ -8,12 +8,15 @@
 #include "SerialReader.hpp"
 #include "UltrasonicSensor.hpp"
 
+using namespace std;
+
 TOF tof;
 DS3231 rtc;
 WiFiClient client;
 UltrasonicSensor ultrasonic;
 WiFiClient server;
 bool demoMode = false;
+const int siren = D4;
 
 namespace SETTINGS{
   int ultrasonicSamples = 1;
@@ -32,7 +35,7 @@ struct Time{
 
 int offsetMillis = 0;
 int getMillis(){
-  return (millis()%1000) - offsetMillis;
+  return (millis() - offsetMillis) % 1000;
 }
 
 void setTime(Time t){
@@ -40,6 +43,24 @@ void setTime(Time t){
   rtc.setMinute(t.minute);
   rtc.setSecond(t.second);
   offsetMillis = t.millisecond - getMillis();
+}
+
+Time addTime(Time t, int m){
+  t.millisecond += m;
+  if(t.millisecond >= 1000){
+    t.millisecond %= 1000;
+  }
+
+  if(t.second >= 60){
+    t.minute++;
+    t.second %= 60;
+  }
+
+  if(t.minute >= 60){
+    t.hour++;
+    t.minute %= 60;
+  }
+  return t;
 }
 
 void printSettings(){
@@ -67,6 +88,7 @@ void connectToServer(){
       Serial.print(serverIp);
       Serial.print(":");
       Serial.println(serverPort);
+      yield();
       delay(200);
     }else{
       Serial.print("Connected to Server");
@@ -87,6 +109,7 @@ void readSerial(char *buffer){
         if((c >= 'a' && c <= 'z' )  || (c >= 'A' && c <= 'Z')){
           buffer[counter++] = c;
         }
+        yield();
       }
   }
   Serial.println(buffer);
@@ -96,6 +119,7 @@ void readSerial(char *buffer){
 void clearSerial(){
   while(Serial.available() > 0){
     Serial.read();
+    yield();
   }
 }
 
@@ -130,6 +154,7 @@ void setupWifi(){
     Serial.println(wifiName);
     Serial.println(wifiPassword);
     delay(100);
+    yield();
   }
   Serial.println("Connected to Wifi");
   Serial.println("Connecting to Server");
@@ -147,6 +172,8 @@ void setup() {
 
   tof.init();
   ultrasonic.init(D6,D5);
+
+  pinMode(siren,OUTPUT);
 }
 
 
@@ -186,7 +213,62 @@ void updateSettings(char *cmd){
   cmd = strtok(NULL," ");
   SETTINGS::sirenEnabled = atoi(cmd);
 
+
   applySettings();
+}
+
+
+
+void updateTime(char* str){
+  unsigned long long beginTime = millis();
+  server.println("f");
+  while(server.available() <= 0) {
+    yield();
+   }
+  unsigned long long endTime = millis();
+  readFromServer(str,256);
+  Serial.println(str);
+
+  Time t;
+
+  t.hour = atoi(strtok(str, " "));
+  t.minute = atoi(strtok(NULL, " "));
+  t.second = atoi(strtok(NULL, " "));
+  t.millisecond = atoi(strtok(NULL, " "));
+  t = addTime(t,(endTime-beginTime)/2);
+
+  setTime(t);
+}
+
+Time getTime(){
+    Time t;
+    t.second = rtc.getSecond();
+    t.minute = rtc.getMinute();
+
+    bool h, hpm;
+    t.hour = rtc.getHour(h,hpm);
+    if(h){
+      t.hour += hpm * 12;
+    }
+    t.millisecond = getMillis();
+    return t;
+}
+
+void testLatency(char *cmd){
+  Serial.println("Latency Test");
+  cmd = strtok(cmd, " ");
+  cmd = strtok(NULL, " ");
+
+  int sampleSize = atoi(cmd);
+  for(int i = 0; i < sampleSize; ++i){
+    Time t = getTime();
+    char msg[256];
+    memset(msg,0,sizeof(msg));
+    sprintf(msg,"%d %d %d %d", t.hour, t.minute, t.second, t.millisecond);
+    Serial.println(msg);
+    server.println(msg);
+    delay(1000);
+  }
 }
 
 void testSensors(char *cmd){
@@ -227,37 +309,8 @@ void testSensors(char *cmd){
   }
 }
 
-bool status = false;
-
-void updateTime(char* str){
-  str = strtok(str," ");
-  Serial.println(str);
-
-  Time t;
-
-  t.hour = atoi(strtok(NULL, " "));
-  t.minute = atoi(strtok(NULL, " "));
-  t.second = atoi(strtok(NULL, " "));
-  t.millisecond = atoi(strtok(NULL, " "));
-
-  setTime(t);
-}
-
-Time getTime(){
-    Time t;
-    t.second = rtc.getSecond();
-    t.minute = rtc.getMinute();
-
-    bool h, hpm;
-    t.hour = rtc.getHour(h,hpm);
-    if(h){
-      t.hour += hpm * 12;
-    }
-    t.millisecond = getMillis();
-    return t;
-}
-
 void demoModeRun(){
+  
   float ultrasonicReading = ultrasonic.getReading(MEASUREMENT_CM);
   float tofReading = tof.getReading(MEASUREMENT_CM);
 
@@ -277,23 +330,40 @@ void demoModeRun(){
     ThingSpeak.writeField(IOT_CHANNEL,1,ultrasonicReading,IOT_WRITE_KEY);
     ThingSpeak.writeField(IOT_CHANNEL,2,tofReading,IOT_WRITE_KEY);
   }
+
+  float maximumReading = max(ultrasonicReading,tofReading);
+  if(SETTINGS::sirenEnabled && maximumReading >= SETTINGS::threshold){
+    digitalWrite(siren,HIGH);
+    Serial.println("SIREN ACTIVATED");
+  }else{
+    digitalWrite(siren,LOW);
+    Serial.println("SIREN OFF");
+  }
   printSettings();
+  
+}
+
+int readFromServer(char* buf, int maxSize){
+  memset(buf, 0, maxSize);
+  int size = 0; 
+  while(server.available()){
+    char ch = server.read();
+    buf[size++] = ch;
+    yield();
+  }
+  buf[size] = '\0';
+  return size;
 }
 
 void processCommand(){
   char buf[256];  
-  memset(buf, 0, sizeof(buf));
-  int size = 0;
-  while(server.available()){
-    char ch = server.read();
-    buf[size++] = ch;
-  }
-
-  buf[size] = '\0';
+  int size = readFromServer(buf,256);
   if(size){
     Serial.println(" ");
     Serial.print("COMMAND: ");
     Serial.println(buf);
+  }else{
+    return;
   }
 
   if(buf[0] == 's'){
@@ -301,12 +371,14 @@ void processCommand(){
   }else if(buf[0] == 't'){
     testSensors(buf);
   }else if(buf[0] == 'd'){
-    bool status = buf[2]-'0';
-    Serial.println(status);
+    bool st = buf[2]-'0';
+    demoMode = st;
+    Serial.println(buf);
   }else if(buf[0] == 'm'){
      updateTime(buf);
+  }else if(buf[0] == 'l'){
+    testLatency(buf);
   }else{  
-    demoMode = status;
   }
 }
 

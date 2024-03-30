@@ -53,6 +53,7 @@ public:
     float sum = 0.0;
     for(int i = 0; i < sampleSize; ++i){
         sum += getIndividualReading(unit);
+        delay(100);
     }
     return sum / sampleSize;
   }
