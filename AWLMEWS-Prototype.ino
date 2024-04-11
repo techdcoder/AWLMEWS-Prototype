@@ -3,7 +3,6 @@
 #include <Wire.h>
 #include "ESP8266WiFi.h"
 #include <ThingSpeak.h>
-#include "secrets.hpp"
 #include "TOF.hpp"
 #include "SerialReader.hpp"
 #include "UltrasonicSensor.hpp"
@@ -43,6 +42,18 @@ void setTime(Time t){
   rtc.setMinute(t.minute);
   rtc.setSecond(t.second);
   offsetMillis = t.millisecond - getMillis();
+}
+
+void updateOffset(){
+  int current = millis();
+  int prevSec = rtc.getSecond();
+  while(millis() - current < 2000){
+    int s = rtc.getSecond();
+    if(s != prevSec){
+      offsetMillis = millis() % 1000;
+      prevSec = s;
+    }
+  }
 }
 
 Time addTime(Time t, int m){
@@ -108,7 +119,7 @@ void readSerial(char *buffer){
         if(c == '\n') break;
         if((c >= 'a' && c <= 'z' )  || (c >= 'A' && c <= 'Z')){
           buffer[counter++] = c;
-        }
+        } 
         yield();
       }
   }
@@ -163,6 +174,7 @@ void setupWifi(){
 
 
 void setup() {
+  delay(100);
   Serial.begin(BAUDRATE);
   
   setupWifi();
@@ -172,6 +184,10 @@ void setup() {
 
   tof.init();
   ultrasonic.init(D6,D5);
+
+  updateOffset();
+ 
+ 
 
   pinMode(siren,OUTPUT);
 }
@@ -254,20 +270,61 @@ Time getTime(){
     return t;
 }
 
+int readFromServer(char* buf, int maxSize){
+  memset(buf, 0, maxSize);
+  int size = 0; 
+  while(server.available() > 0){
+    char ch = server.read();
+    if(ch == '\n') break;
+    buf[size++] = ch;
+    
+    yield();
+    delay(10);
+  }
+  buf[size] = '\0';
+  return size;
+}
+
+
+
 void testLatency(char *cmd){
   Serial.println("Latency Test");
+  
   cmd = strtok(cmd, " ");
   cmd = strtok(NULL, " ");
+  int samples = atoi(cmd);
+  cmd = strtok(NULL," ");
+  int sensorType = atoi(cmd);
 
-  int sampleSize = atoi(cmd);
-  for(int i = 0; i < sampleSize; ++i){
-    Time t = getTime();
-    char msg[256];
-    memset(msg,0,sizeof(msg));
-    sprintf(msg,"%d %d %d %d", t.hour, t.minute, t.second, t.millisecond);
-    Serial.println(msg);
-    server.println(msg);
-    delay(1000);
+  if(sensorType == 0){
+    ultrasonic.getReading(MEASUREMENT_CM);
+  }else{
+    tof.getReading(MEASUREMENT_CM);
+  }
+
+  server.println("f");
+  
+  Serial.print("SAMPLES: ");
+  Serial.println(samples);
+
+  char buf[256];
+  for(int i = 0; i < samples; ++i){
+      if(server.available() > 0){
+        delay(50);
+      }
+      int len = readFromServer(buf,256);
+      if(len < 2){
+        i--;
+        continue;
+      }
+    
+    if(sensorType == 0){
+      ultrasonic.getReading(MEASUREMENT_CM);
+    }else{
+      tof.getReading(MEASUREMENT_CM);
+    }
+    server.println("f");
+    Serial.println("Feedback");
   }
 }
 
@@ -292,6 +349,7 @@ void testSensors(char *cmd){
       float reading = ultrasonic.getReading(MEASUREMENT_CM);
       reading = SETTINGS::prototypeHeight - reading;
 
+      Serial.println(reading);
       server.println(reading);
       server.flush();
     }
@@ -303,6 +361,11 @@ void testSensors(char *cmd){
     for(int i = 0; i < sampleSize; ++i){
       float reading = tof.getReading(MEASUREMENT_CM);
       reading = SETTINGS::prototypeHeight - reading;
+
+
+      Serial.println(reading);
+      server.println(reading);
+
       server.println(reading);
       server.flush();
     }
@@ -341,18 +404,6 @@ void demoModeRun(){
   }
   printSettings();
   
-}
-
-int readFromServer(char* buf, int maxSize){
-  memset(buf, 0, maxSize);
-  int size = 0; 
-  while(server.available()){
-    char ch = server.read();
-    buf[size++] = ch;
-    yield();
-  }
-  buf[size] = '\0';
-  return size;
 }
 
 void processCommand(){
